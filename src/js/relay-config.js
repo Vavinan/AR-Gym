@@ -61,8 +61,9 @@ export class RelayNodeConfig {
       errors.push('Invalid WebSocket URL format')
     }
     
-    if (config.proxyUrl && !this.isValidWebSocketUrl(config.proxyUrl)) {
-      errors.push('Invalid Proxy WebSocket URL format')
+    // Proxy URL can be HTTPS (will be converted to WSS) or WSS
+    if (config.proxyUrl && !this.isValidWebSocketUrl(config.proxyUrl) && !this.isValidProxyUrl(config.proxyUrl)) {
+      errors.push('Invalid Proxy URL format (use https:// or wss://)')
     }
     
     if (config.reconnectInterval < 1000) {
@@ -87,6 +88,16 @@ export class RelayNodeConfig {
     try {
       const urlObj = new URL(url)
       return urlObj.protocol === 'ws:' || urlObj.protocol === 'wss:'
+    } catch {
+      return false
+    }
+  }
+
+  isValidProxyUrl(url) {
+    try {
+      const urlObj = new URL(url)
+      // Accept HTTPS URLs for proxy (will be converted to WSS)
+      return urlObj.protocol === 'https:'
     } catch {
       return false
     }

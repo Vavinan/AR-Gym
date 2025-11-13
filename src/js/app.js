@@ -330,6 +330,37 @@ class FitnessARApp {
   async configureRelayNode() {
     if (!this.dummyDataProvider) return
 
+    // Check if we're on Vercel/production
+    const isProduction = window.location.hostname.includes('vercel.app') || 
+                        (window.location.hostname.includes('.') && 
+                         !window.location.hostname.includes('localhost') &&
+                         !window.location.hostname.includes('127.0.0.1'))
+
+    // On production (Vercel), don't auto-configure - user must set proxy URL manually
+    if (isProduction) {
+      console.log('=' .repeat(70))
+      console.log('🔧 AR FITNESS APP - RELAY CONFIGURATION')
+      console.log('=' .repeat(70))
+      console.log('🌐 Running on production (Vercel)')
+      console.log('💡 Please configure Proxy/Tunnel URL in Relay Settings')
+      console.log('💡 Use ngrok or similar service to expose your local server')
+      console.log('=' .repeat(70))
+      
+      // Don't auto-configure URL on production - let user set it via UI
+      // Just enable relay node communication
+      const relayConfig = {
+        enabled: true,
+        url: '', // Leave empty - user should configure proxy URL
+        reconnectInterval: 5000,
+        maxReconnectAttempts: 10
+      }
+      
+      this.dummyDataProvider.configureRelayNode(relayConfig)
+      this.startRelayStatusUpdates()
+      return
+    }
+
+    // For localhost/development: auto-detect IP
     // For mobile devices, use the current page's hostname (which is the server's IP)
     // For localhost access, try to detect the actual server IP
     let detectedIP = window.location.hostname

@@ -25,11 +25,23 @@ export class RelayConnection {
     const config = this.config.loadConfig()
     const url = this.config.getEffectiveUrl()
     
+    // On Vercel/production, require proxy URL if not on localhost
+    const isProduction = window.location.hostname.includes('vercel.app') || 
+                        (window.location.hostname.includes('.') && 
+                         !window.location.hostname.includes('localhost') &&
+                         !window.location.hostname.includes('127.0.0.1'))
+    
     if (!url) {
       console.warn('No WebSocket URL configured. Attempting to auto-detect...')
       // Try to detect local IP or use proxy
       await this.attemptAutoConnect()
       return
+    }
+    
+    // Warn if trying to use direct URL on production without proxy
+    if (isProduction && !config.proxyUrl && url && !url.includes('ngrok') && !url.includes('cloudflare')) {
+      console.warn('⚠️ On production (Vercel), you should use a proxy/tunnel URL (ngrok, etc.)')
+      console.warn('⚠️ Direct WebSocket connections may not work from HTTPS pages')
     }
 
     this.connectToUrl(url)
@@ -91,8 +103,13 @@ export class RelayConnection {
       let finalUrl = url
       const isSecure = window.location.protocol === 'https:'
       
+      // Convert HTTPS to WSS for proxy URLs (ngrok, etc.)
+      if (url.startsWith('https://')) {
+        finalUrl = url.replace('https://', 'wss://')
+        console.log('Converting HTTPS proxy URL to WSS:', finalUrl)
+      }
       // If URL doesn't specify protocol, add it
-      if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+      else if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
         finalUrl = (isSecure ? 'wss://' : 'ws://') + url
       } else if (isSecure && url.startsWith('ws://')) {
         // Upgrade to WSS if page is HTTPS
