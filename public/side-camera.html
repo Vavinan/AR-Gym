@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, orientation=landscape">
+    <title>Side Camera - AR Fitness</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            max-width: 600px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ff88;
+            border-radius: 10px;
+        }
+        h1 {
+            color: #00ff88;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            color: #00ff88;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #00ff88;
+            color: #fff;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 255, 136, 0.2);
+            border: 2px solid #00ff88;
+            color: #00ff88;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-top: 10px;
+        }
+        button:hover:not(:disabled) {
+            background: rgba(0, 255, 136, 0.4);
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .status-connected {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+            border: 1px solid #00ff88;
+        }
+        .status-disconnected {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff4444;
+            border: 1px solid #ff4444;
+        }
+        #preview {
+            width: 100%;
+            max-width: 480px;
+            margin-top: 15px;
+            border: 1px solid #00ff88;
+            border-radius: 5px;
+            transform: scaleX(-1); /* Flip video horizontally */
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Side Camera Sender</h1>
+        <div class="input-group">
+            <label for="peer-id">Enter Main Device Peer ID:</label>
+            <input type="text" id="peer-id" placeholder="Enter Peer ID from main device">
+        </div>
+        <button id="connect-btn">Connect</button>
+        <button id="disconnect-btn" style="display: none;">Disconnect</button>
+        <div id="status" class="status-disconnected">Disconnected</div>
+        <video id="preview" autoplay muted playsinline style="display: none;"></video>
+    </div>
+
+    <script>
+        const peerIdInput = document.getElementById('peer-id')
+        const connectBtn = document.getElementById('connect-btn')
+        const disconnectBtn = document.getElementById('disconnect-btn')
+        const statusEl = document.getElementById('status')
+        const preview = document.getElementById('preview')
+
+        let peer = null
+        let call = null
+        let dataConnection = null
+        let localStream = null
+
+        // Get Peer ID from URL if provided
+        const urlParams = new URLSearchParams(window.location.search)
+        const peerIdFromUrl = urlParams.get('peerId')
+        if (peerIdFromUrl) {
+            peerIdInput.value = peerIdFromUrl
+        }
+
+        connectBtn.addEventListener('click', async () => {
+            const mainPeerId = peerIdInput.value.trim()
+            if (!mainPeerId) {
+                alert('Please enter a Peer ID')
+                return
+            }
+
+            await connectToMainDevice(mainPeerId)
+        })
+
+        disconnectBtn.addEventListener('click', () => {
+            disconnect()
+        })
+
+        async function connectToMainDevice(mainPeerId) {
+            try {
+                statusEl.textContent = 'Connecting...'
+                statusEl.className = 'status-disconnected'
+
+                // Initialize PeerJS
+                const myPeerId = 'side-camera-' + Math.random().toString(36).substr(2, 9)
+                peer = new Peer(myPeerId, {
+                    host: '0.peerjs.com',
+                    port: 443,
+                    path: '/',
+                    secure: true,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            {
+                                urls: 'turn:openrelay.metered.ca:80',
+                                username: 'openrelayproject',
+                                credential: 'openrelayproject'
+                            }
+                        ]
+                    }
+                })
+
+                peer.on('open', async (id) => {
+                    console.log('Side camera PeerJS ID:', id)
+                    
+                    // Get local video stream
+                    try {
+                        localStream = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: 'user' },
+                            audio: false
+                        })
+                        
+                        preview.srcObject = localStream
+                        preview.style.display = 'block'
+
+                        // Connect data channel
+                        dataConnection = peer.connect(mainPeerId)
+                        dataConnection.on('open', () => {
+                            console.log('Data connection opened')
+                        })
+
+                        dataConnection.on('data', (data) => {
+                            console.log('Received data from main device:', data)
+                        })
+
+                        // Call main device with video stream
+                        call = peer.call(mainPeerId, localStream)
+                        call.on('stream', (remoteStream) => {
+                            console.log('Received remote stream from main device')
+                        })
+
+                        call.on('close', () => {
+                            console.log('Call closed')
+                            disconnect()
+                        })
+
+                        statusEl.textContent = 'Connected'
+                        statusEl.className = 'status-connected'
+                        connectBtn.style.display = 'none'
+                        disconnectBtn.style.display = 'block'
+                    } catch (error) {
+                        console.error('Error accessing camera:', error)
+                        statusEl.textContent = 'Camera access denied'
+                        statusEl.className = 'status-disconnected'
+                    }
+                })
+
+                peer.on('error', (error) => {
+                    console.error('PeerJS error:', error)
+                    statusEl.textContent = 'Connection error: ' + error.message
+                    statusEl.className = 'status-disconnected'
+                })
+            } catch (error) {
+                console.error('Connection error:', error)
+                statusEl.textContent = 'Connection failed'
+                statusEl.className = 'status-disconnected'
+            }
+        }
+
+        function disconnect() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop())
+                localStream = null
+            }
+
+            if (call) {
+                call.close()
+                call = null
+            }
+
+            if (dataConnection) {
+                dataConnection.close()
+                dataConnection = null
+            }
+
+            if (peer) {
+                peer.destroy()
+                peer = null
+            }
+
+            preview.srcObject = null
+            preview.style.display = 'none'
+            statusEl.textContent = 'Disconnected'
+            statusEl.className = 'status-disconnected'
+            connectBtn.style.display = 'block'
+            disconnectBtn.style.display = 'none'
+        }
+    </script>
+</body>
+</html>
+
