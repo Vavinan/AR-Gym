@@ -1,4 +1,4 @@
-# AR Fitness Tracker - Vite App
+# AR-Gym
 
 A modern Vite-based AR Fitness Tracker application with PeerJS support for side camera connections and WebSocket proxy support for connecting to local servers from Vercel deployments.
 
