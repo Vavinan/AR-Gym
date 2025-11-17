@@ -1270,19 +1270,30 @@ dispose() {
   }
 
   loadRelayConfigToUI() {
-    // Load current configuration from localStorage or use current detected URL
-    const storedUrl = localStorage.getItem('relayNodeUrl')
-    const currentUrl = storedUrl || (this.dummyDataProvider ? this.dummyDataProvider.relayNodeConfig.url : '')
-    
-    const config = {
-      enabled: true, // Always enabled
-      url: currentUrl,
-      reconnectInterval: parseInt(localStorage.getItem('relayNodeReconnectInterval')) || 5000,
-      maxReconnectAttempts: parseInt(localStorage.getItem('relayNodeMaxReconnectAttempts')) || 10
+    // Load configuration using RelayNodeConfig if available, otherwise fallback to localStorage
+    let config = {
+      enabled: true,
+      url: '',
+      proxyUrl: '',
+      reconnectInterval: 5000,
+      maxReconnectAttempts: 10
+    }
+
+    if (window.RelayNodeConfig) {
+      const relayConfigManager = new window.RelayNodeConfig()
+      const loadedConfig = relayConfigManager.loadConfig()
+      config = { ...config, ...loadedConfig }
+    } else {
+      // Fallback to old localStorage keys
+      const storedUrl = localStorage.getItem('relayNodeUrl')
+      config.url = storedUrl || (this.dummyDataProvider ? this.dummyDataProvider.relayNodeConfig?.url : '') || ''
+      config.reconnectInterval = parseInt(localStorage.getItem('relayNodeReconnectInterval')) || 5000
+      config.maxReconnectAttempts = parseInt(localStorage.getItem('relayNodeMaxReconnectAttempts')) || 10
     }
 
     const enabledCheckbox = document.getElementById("relay-enabled")
     const urlInput = document.getElementById("relay-url")
+    const proxyUrlInput = document.getElementById("relay-proxy-url")
     const reconnectIntervalInput = document.getElementById("relay-reconnect-interval")
     const maxReconnectInput = document.getElementById("relay-max-reconnect")
 
@@ -1291,8 +1302,12 @@ dispose() {
       enabledCheckbox.disabled = true // Disable the checkbox since it's always enabled
     }
     if (urlInput) {
-      urlInput.value = config.url
+      urlInput.value = config.url || ''
       urlInput.placeholder = config.url || 'Auto-detected URL will appear here'
+    }
+    if (proxyUrlInput) {
+      proxyUrlInput.value = config.proxyUrl || ''
+      proxyUrlInput.placeholder = 'e.g., wss://your-tunnel.ngrok.io or https://your-tunnel.ngrok.io'
     }
     if (reconnectIntervalInput) reconnectIntervalInput.value = config.reconnectInterval
     if (maxReconnectInput) maxReconnectInput.value = config.maxReconnectAttempts
@@ -1304,6 +1319,7 @@ dispose() {
   saveRelayConfig() {
     const enabledCheckbox = document.getElementById("relay-enabled")
     const urlInput = document.getElementById("relay-url")
+    const proxyUrlInput = document.getElementById("relay-proxy-url")
     const reconnectIntervalInput = document.getElementById("relay-reconnect-interval")
     const maxReconnectInput = document.getElementById("relay-max-reconnect")
 
@@ -1312,9 +1328,17 @@ dispose() {
       return
     }
 
+    let proxyUrl = proxyUrlInput ? proxyUrlInput.value.trim() : ''
+    
+    // Convert HTTPS to WSS if needed
+    if (proxyUrl && proxyUrl.startsWith('https://')) {
+      proxyUrl = proxyUrl.replace('https://', 'wss://')
+    }
+
     const config = {
       enabled: true, // Always enabled
       url: urlInput.value.trim(),
+      proxyUrl: proxyUrl,
       reconnectInterval: parseInt(reconnectIntervalInput.value),
       maxReconnectAttempts: parseInt(maxReconnectInput.value)
     }
@@ -1323,6 +1347,16 @@ dispose() {
     if (config.url && !this.isValidWebSocketUrl(config.url)) {
       this.showStatus("Invalid WebSocket URL format", true)
       return
+    }
+
+    // Validate proxy URL (can be WSS or HTTPS)
+    if (config.proxyUrl) {
+      const isValidWss = this.isValidWebSocketUrl(config.proxyUrl)
+      const isValidHttps = config.proxyUrl.startsWith('https://')
+      if (!isValidWss && !isValidHttps) {
+        this.showStatus("Invalid Proxy URL format (use wss:// or https://)", true)
+        return
+      }
     }
 
     if (config.reconnectInterval < 1000) {
@@ -1335,11 +1369,18 @@ dispose() {
       return
     }
 
-    // Save to localStorage
-    localStorage.setItem('relayNodeEnabled', config.enabled.toString())
-    localStorage.setItem('relayNodeUrl', config.url)
-    localStorage.setItem('relayNodeReconnectInterval', config.reconnectInterval.toString())
-    localStorage.setItem('relayNodeMaxReconnectAttempts', config.maxReconnectAttempts.toString())
+    // Save using RelayNodeConfig if available, otherwise fallback to localStorage
+    if (window.RelayNodeConfig) {
+      const relayConfigManager = new window.RelayNodeConfig()
+      relayConfigManager.saveConfig(config)
+      console.log('Relay node configuration saved:', config)
+    } else {
+      // Fallback to old localStorage keys
+      localStorage.setItem('relayNodeEnabled', config.enabled.toString())
+      localStorage.setItem('relayNodeUrl', config.url)
+      localStorage.setItem('relayNodeReconnectInterval', config.reconnectInterval.toString())
+      localStorage.setItem('relayNodeMaxReconnectAttempts', config.maxReconnectAttempts.toString())
+    }
 
     // Update dummy data provider configuration
     if (this.dummyDataProvider) {

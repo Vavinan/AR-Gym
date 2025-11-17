@@ -108,6 +108,10 @@ export class RelayNodeConfig {
     const config = this.loadConfig()
     // Prefer proxy URL if available (for Vercel deployment)
     if (config.proxyUrl) {
+      // Convert HTTPS to WSS if needed (for ngrok URLs)
+      if (config.proxyUrl.startsWith('https://')) {
+        return config.proxyUrl.replace('https://', 'wss://')
+      }
       return config.proxyUrl
     }
     // Fallback to direct URL

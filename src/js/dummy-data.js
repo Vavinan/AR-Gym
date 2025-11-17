@@ -216,14 +216,35 @@ export default class DummyDataProvider {
     }
 
     try {
-      console.log(`Connecting to relay node at ${this.relayNodeConfig.url}`)
-      this.relayConnection = new WebSocket(this.relayNodeConfig.url)
+      // Get effective URL (prefer proxy URL if available)
+      let effectiveUrl = this.relayNodeConfig.proxyUrl || this.relayNodeConfig.url
+      
+      // Convert HTTPS to WSS if needed (for ngrok URLs)
+      if (effectiveUrl && effectiveUrl.startsWith('https://')) {
+        effectiveUrl = effectiveUrl.replace('https://', 'wss://')
+      }
+      
+      if (!effectiveUrl) {
+        console.error('No WebSocket URL configured. Please set a URL in Relay Settings.')
+        return false
+      }
+      
+      // Remove trailing slash if present (can cause connection issues)
+      effectiveUrl = effectiveUrl.replace(/\/$/, '')
+      
+      // For ngrok free tier, we might need to handle the browser warning
+      // The WebSocket should work, but ensure the server is running in WS mode (not WSS)
+      console.log(`Connecting to relay node at ${effectiveUrl}`)
+      console.log('💡 Make sure your server is running in non-SSL mode (WS) when using ngrok')
+      console.log('💡 For ngrok: Run server with --no-ssl or --ngrok flag')
+      
+      this.relayConnection = new WebSocket(effectiveUrl)
 
       this.relayConnection.onopen = () => {
         console.log('='.repeat(50))
         console.log('[WebSocket] ✅ Connected to relay node')
         console.log('[WebSocket] Connection state:', this.relayConnection.readyState, '(OPEN = 1)')
-        console.log('[WebSocket] URL:', this.relayNodeConfig.url)
+        console.log('[WebSocket] URL:', effectiveUrl)
         console.log('[WebSocket] Device ID:', this.deviceId)
         console.log('='.repeat(50))
         this.isConnectedToRelay = true
@@ -274,11 +295,36 @@ export default class DummyDataProvider {
       }
 
       this.relayConnection.onclose = (event) => {
-        console.log('Disconnected from relay node', event.code, event.reason)
+        const code = event.code
+        const reason = event.reason || 'No reason provided'
+        
+        console.log('='.repeat(50))
+        console.log('❌ Disconnected from relay node')
+        console.log(`   Close code: ${code}`)
+        console.log(`   Reason: ${reason}`)
+        
+        // Provide helpful error messages based on close code
+        if (code === 1006) {
+          console.log('⚠️  Abnormal closure (1006) - Possible causes:')
+          console.log('   1. Server is not running on port 8080')
+          console.log('   2. Server is not configured for ngrok (should use --no-ssl or --ngrok flag)')
+          console.log('   3. ngrok tunnel is not active or misconfigured')
+          console.log('   4. Firewall blocking the connection')
+          console.log('💡 Check: Is your Python server running?')
+          console.log('💡 For ngrok: Run server with: python visualizer_server_firebase.py --no-ssl')
+        } else if (code === 1002) {
+          console.log('⚠️  Protocol error (1002) - Server may not support WebSocket')
+        } else if (code === 1003) {
+          console.log('⚠️  Unsupported data (1003) - Invalid WebSocket data')
+        } else if (code === 1000) {
+          console.log('✓ Clean disconnect')
+        }
+        console.log('='.repeat(50))
+        
         this.isConnectedToRelay = false
         
         // Only attempt reconnect if it wasn't a clean close (code 1000) or if we're in an active workout
-        if (event.code !== 1000 || this.isActive) {
+        if (code !== 1000 || this.isActive) {
           this.attemptReconnect()
         } else {
           console.log('Clean disconnect - not attempting reconnect')
@@ -286,7 +332,14 @@ export default class DummyDataProvider {
       }
 
       this.relayConnection.onerror = (error) => {
-        console.error('Relay connection error:', error)
+        console.error('='.repeat(50))
+        console.error('❌ Relay connection error:', error)
+        console.error('💡 Troubleshooting:')
+        console.error('   1. Verify server is running: python visualizer_server_firebase.py --no-ssl')
+        console.error('   2. Verify ngrok is running: ngrok http 8080')
+        console.error('   3. Check ngrok URL matches the configured proxy URL')
+        console.error('   4. For ngrok free tier, you may need to visit the URL in a browser first')
+        console.error('='.repeat(50))
         this.isConnectedToRelay = false
       }
 
